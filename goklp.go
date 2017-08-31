@@ -108,6 +108,9 @@ func (o *opts) ldapsearch() ([]string, error) {
 
 	// parallel search
 	ch := make(chan result, 1)
+	outstanding := len(o.goklp_ldap_uris)
+	errCh := make(chan error, outstanding)
+
 	for _, server_url := range o.goklp_ldap_uris {
 		q := query{
 			baseDN:     o.goklp_ldap_base_dn,
@@ -120,6 +123,7 @@ func (o *opts) ldapsearch() ([]string, error) {
 		go func() {
 			sr, err := o.doquery(q)
 			if err != nil {
+				errCh <- err
 				return
 			}
 			r := result{sr: sr, ldapURL: q.ldapURL}
@@ -130,20 +134,29 @@ func (o *opts) ldapsearch() ([]string, error) {
 		}()
 	}
 
-	select {
-	case r := <-ch:
-		if len(r.sr.Entries) > 1 {
-			return keys, fmt.Errorf("Too many results found.")
-		}
-		if len(r.sr.Entries) == 1 {
-			for _, attr := range r.sr.Entries[0].Attributes {
-				if attr.Name == "sshPublicKey" {
-					keys = append(keys, attr.Values...)
+	for {
+		select {
+		case r := <-ch:
+			if len(r.sr.Entries) > 1 {
+				return keys, fmt.Errorf("Too many results found.")
+			}
+			if len(r.sr.Entries) == 1 {
+				for _, attr := range r.sr.Entries[0].Attributes {
+					if attr.Name == "sshPublicKey" {
+						keys = append(keys, attr.Values...)
+					}
 				}
 			}
+			return keys, nil
+		case err := <-errCh:
+			outstanding--
+			if outstanding == 0 {
+				return keys, err
+			}
+
+		case <-time.After(o.goklp_ldap_timeout):
+			return keys, fmt.Errorf("No response before timeout.")
 		}
-	case <-time.After(o.goklp_ldap_timeout):
-		return keys, fmt.Errorf("No response before timeout.")
 	}
 
 	return keys, nil
