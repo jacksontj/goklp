@@ -22,7 +22,9 @@ var usage = `goklp: OpenSSH Keys LDAP Provider for AuthorizedKeysCommand
 
 Usage:
   goklp <username>
-  goklp --config <configfile> <username>
+  goklp --config=<cfile> <username>
+  goklp --no-config-security <username>
+  goklp --no-config-security --config=<cfile> <username>
   goklp -h --help
   goklp --version
 
@@ -37,9 +39,10 @@ Config file is required, named: goklp.ini
   goklp_insecure_skip_verify  = false                    (optional - default: false)
 
 Options:
-  --version        Show version.
-  --config=<cfile> Path to config file
-  -h, --help       Show this screen.
+  --version             Show version.
+  --config=<cfile>      Path to config file
+  --no-config-security  Disable config file security checks
+  -h, --help            Show this screen.
 `
 
 type opts struct {
@@ -227,7 +230,7 @@ func getOpts() (*opts, error) {
 
 	configFileRaw, exists := arguments["--config"]
 	var configFile string
-	if !exists {
+	if !exists || configFileRaw == nil {
 		// handle config file
 		myDirectory, err := osext.ExecutableFolder()
 		if err != nil {
@@ -242,14 +245,16 @@ func getOpts() (*opts, error) {
 		}
 	}
 
-	fileInfo, err := os.Stat(configFile)
-	if err != nil {
-		return o, err
-	}
+	if _, exists := arguments["--no-config-security"]; !exists && false {
+		fileInfo, err := os.Stat(configFile)
+		if err != nil {
+			return o, err
+		}
 
-	// enforce reasonable config file security
-	if !strings.HasSuffix(fileInfo.Mode().String(), "------") {
-		return o, fmt.Errorf("Permissions on goklp.ini are too loose - try a 'chmod 600 goklp.ini'")
+		// enforce reasonable config file security
+		if !strings.HasSuffix(fileInfo.Mode().String(), "------") {
+			return o, fmt.Errorf("Permissions on goklp.ini are too loose - try a 'chmod 600 goklp.ini'")
+		}
 	}
 
 	config, err := ini.LoadFile(configFile)
