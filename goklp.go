@@ -22,6 +22,7 @@ var usage = `goklp: OpenSSH Keys LDAP Provider for AuthorizedKeysCommand
 
 Usage:
   goklp <username>
+  goklp --config <configfile> <username>
   goklp -h --help
   goklp --version
 
@@ -36,8 +37,9 @@ Config file is required, named: goklp.ini
   goklp_insecure_skip_verify  = false                    (optional - default: false)
 
 Options:
-  --version       Show version.
-  -h, --help      Show this screen.
+  --version        Show version.
+  --config=<cfile> Path to config file
+  -h, --help       Show this screen.
 `
 
 type opts struct {
@@ -223,12 +225,23 @@ func getOpts() (*opts, error) {
 
 	o.username = arguments["<username>"].(string)
 
-	// handle config file
-	myDirectory, err := osext.ExecutableFolder()
-	if err != nil {
-		return o, err
+	configFileRaw, exists := arguments["--config"]
+	var configFile string
+	if !exists {
+		// handle config file
+		myDirectory, err := osext.ExecutableFolder()
+		if err != nil {
+			return o, err
+		}
+		configFile = myDirectory + "/goklp.ini"
+	} else {
+		var ok bool
+		configFile, ok = configFileRaw.(string)
+		if !ok {
+			return o, fmt.Errorf("config file must be a string")
+		}
 	}
-	configFile := myDirectory + "/goklp.ini"
+
 	fileInfo, err := os.Stat(configFile)
 	if err != nil {
 		return o, err
