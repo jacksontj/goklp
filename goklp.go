@@ -29,7 +29,7 @@ Config file is required, named: goklp.ini
   goklp_ldap_uri              = ldaps://server1:636,ldaps://server2:636   (required)
   goklp_ldap_bind_dn          = CN=someuser,O=someorg,C=sometld           (required)
   goklp_ldap_base_dn          = O=someorg,C=sometld                       (required)
-  goklp_ldap_bind_pw          = someSecretPassword                        (required)
+  goklp_ldap_bind_pw          = someSecretPassword                        (optional - default: "")
   goklp_ldap_timeout_secs     = 10                           (optional - default: 5)
   goklp_ldap_user_attr        = 10                           (optional - default: uid)
   goklp_debug                 = true                     (optional - default: false)
@@ -190,9 +190,11 @@ func (o *opts) doquery(q query) (*ldap.SearchResult, error) {
 	defer l.Close()
 
 	// do an ldap bind
-	err = l.Bind(q.user, q.passwd)
-	if err != nil {
-		return sr, err
+	if q.passwd != "" {
+		err = l.Bind(q.user, q.passwd)
+		if err != nil {
+			return sr, err
+		}
 	}
 
 	// do the ldap search
@@ -255,10 +257,7 @@ func getOpts() (*opts, error) {
 	if !exists {
 		return o, fmt.Errorf("Config option goklp_ldap_base_dn is not set.")
 	}
-	o.goklp_ldap_bind_pw, exists = config[""]["goklp_ldap_bind_pw"]
-	if !exists {
-		return o, fmt.Errorf("Config option goklp_ldap_bind_pw is not set.")
-	}
+	o.goklp_ldap_bind_pw, _ = config[""]["goklp_ldap_bind_pw"]
 
 	// default to 5 second timeout
 	goklp_ldap_timeout_secs := 5
