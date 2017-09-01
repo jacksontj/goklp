@@ -7,10 +7,13 @@ import (
 	"github.com/kardianos/osext"
 	"github.com/nmcclain/ldap"
 	"github.com/vaughan0/go-ini"
+	"io/ioutil"
 	"log"
 	"log/syslog"
 	"net/url"
 	"os"
+	"os/user"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +40,7 @@ Config file is required, named: goklp.ini
   goklp_ldap_user_attr        = 10                           (optional - default: uid)
   goklp_debug                 = true                     (optional - default: false)
   goklp_insecure_skip_verify  = false                    (optional - default: false)
+  goklp_cache_file            = authorized_keys_goklp    (optional - default: "")
 
 Options:
   --version             Show version.
@@ -55,6 +59,7 @@ type opts struct {
 	goklp_debug                bool
 	goklp_insecure_skip_verify bool
 	goklp_ldap_timeout         time.Duration
+	goklp_cache_file           string
 }
 
 type query struct {
@@ -102,6 +107,27 @@ func main() {
 	}
 }
 
+func (o *opts) SaveCache(keys []string) {
+	// If we have a configured
+	if o.goklp_cache_file != "" {
+		if u, err := user.Lookup(o.username); err == nil {
+			ioutil.WriteFile(path.Join(u.HomeDir, ".ssh", o.goklp_cache_file), []byte(strings.Join(keys, "\n")), 0600)
+		}
+	}
+}
+
+func (o *opts) LoadCache() ([]string, bool) {
+	// If we where going to error, lets return the cache instead if configured
+	if o.goklp_cache_file != "" {
+		if u, err := user.Lookup(o.username); err == nil {
+			if bytes, err := ioutil.ReadFile(path.Join(u.HomeDir, ".ssh", o.goklp_cache_file)); err == nil {
+				return strings.Split(string(bytes), "\n"), true
+			}
+		}
+	}
+	return nil, false
+}
+
 ////
 func (o *opts) ldapsearch() ([]string, error) {
 	keys := []string{}
@@ -147,14 +173,24 @@ func (o *opts) ldapsearch() ([]string, error) {
 					}
 				}
 			}
+			o.SaveCache(keys)
+
 			return keys, nil
 		case err := <-errCh:
 			outstanding--
 			if outstanding == 0 {
+				if cacheKeys, ok := o.LoadCache(); ok {
+					return cacheKeys, nil
+				}
+
 				return keys, err
 			}
 
 		case <-time.After(o.goklp_ldap_timeout):
+			if cacheKeys, ok := o.LoadCache(); ok {
+				return cacheKeys, nil
+			}
+
 			return keys, fmt.Errorf("No response before timeout.")
 		}
 	}
@@ -315,5 +351,8 @@ func getOpts() (*opts, error) {
 	if s, exists := config[""]["goklp_insecure_skip_verify"]; exists && s == "true" {
 		o.goklp_insecure_skip_verify = true
 	}
+
+	o.goklp_cache_file, _ = config[""]["goklp_cache_file"]
+
 	return o, nil
 }
